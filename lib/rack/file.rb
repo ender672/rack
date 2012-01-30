@@ -15,6 +15,29 @@ module Rack
     SEPS = Regexp.union(*[::File::SEPARATOR, ::File::ALT_SEPARATOR].compact)
     ALLOWED_VERBS = %w[GET HEAD]
 
+    class FileBody
+      attr_reader :to_path
+      
+      def initialize(path, range)
+        @to_path = path
+        @range = range
+      end
+      
+      def each
+        F.open(@to_path, "rb") do |file|
+          file.seek(@range.begin)
+          remaining_len = @range.end-@range.begin+1
+          while remaining_len > 0
+            part = file.read([8192, remaining_len].min)
+            break unless part
+            remaining_len -= part.length
+
+            yield part
+          end
+        end
+      end
+    end    
+    
     attr_accessor :root
     attr_accessor :cache_control
 
@@ -23,13 +46,9 @@ module Rack
       @cache_control = cache_control
     end
 
-    def call(env)
-      dup._call(env)
-    end
-
     F = ::File
 
-    def _call(env)
+    def call(env)
       unless ALLOWED_VERBS.include? env["REQUEST_METHOD"]
         return fail(405, "Method Not Allowed")
       end
@@ -65,7 +84,6 @@ module Rack
     end
 
     def serving(env, path)
-      @path = path
       last_modified = F.mtime(path).httpdate
       return [304, {}, []] if env['HTTP_IF_MODIFIED_SINCE'] == last_modified
       response = [
@@ -73,8 +91,7 @@ module Rack
         {
           "Last-Modified"  => last_modified,
           "Content-Type"   => Mime.mime_type(F.extname(path), 'text/plain')
-        },
-        env["REQUEST_METHOD"] == "HEAD" ? [] : self
+        }
       ]
       response[1].merge! 'Cache-Control' => @cache_control if @cache_control
 
@@ -89,7 +106,7 @@ module Rack
         # No ranges, or multiple ranges (which we don't support):
         # TODO: Support multiple byte-ranges
         response[0] = 200
-        @range = 0..size-1
+        range = 0..size-1
       elsif ranges.empty?
         # Unsatisfiable. Return error, and file size:
         response = fail(416, "Byte range unsatisfiable")
@@ -97,32 +114,15 @@ module Rack
         return response
       else
         # Partial content:
-        @range = ranges[0]
+        range = ranges[0]
         response[0] = 206
-        response[1]["Content-Range"]  = "bytes #{@range.begin}-#{@range.end}/#{size}"
-        size = @range.end - @range.begin + 1
+        response[1]["Content-Range"]  = "bytes #{range.begin}-#{range.end}/#{size}"
+        size = range.end - range.begin + 1
       end
 
       response[1]["Content-Length"] = size.to_s
+      response << (env["REQUEST_METHOD"] == "HEAD" ? [] : FileBody.new(path, range))
       response
-    end
-
-    def each
-      F.open(@path, "rb") do |file|
-        file.seek(@range.begin)
-        remaining_len = @range.end-@range.begin+1
-        while remaining_len > 0
-          part = file.read([8192, remaining_len].min)
-          break unless part
-          remaining_len -= part.length
-
-          yield part
-        end
-      end
-    end
-    
-    def to_path
-      @path
     end
 
     private

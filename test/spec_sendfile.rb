@@ -1,12 +1,6 @@
 require 'rack/sendfile'
 require 'rack/mock'
 
-describe Rack::File do
-  should "respond to #to_path" do
-    Rack::File.new(Dir.pwd).should.respond_to :to_path
-  end
-end
-
 describe Rack::Sendfile do
   def sendfile_body
     res = ['Hello World']
