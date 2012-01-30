@@ -16,10 +16,7 @@ module Rack
     ALLOWED_VERBS = %w[GET HEAD]
 
     attr_accessor :root
-    attr_accessor :path
     attr_accessor :cache_control
-
-    alias :to_path :path
 
     def initialize(root, cache_control = nil)
       @root = root
@@ -121,6 +118,10 @@ module Rack
           yield part
         end
       end
+    end
+    
+    def to_path
+      @path
     end
 
     private
