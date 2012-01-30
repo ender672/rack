@@ -49,29 +49,30 @@ module Rack
         end
       end
 
-      @path = F.join(@root, *parts)
+      path = F.join(@root, *parts)
 
       available = begin
-        F.file?(@path) && F.readable?(@path)
+        F.file?(path) && F.readable?(path)
       rescue SystemCallError
         false
       end
 
       if available
-        serving(env)
+        serving(env, path)
       else
         fail(404, "File not found: #{path_info}")
       end
     end
 
-    def serving(env)
-      last_modified = F.mtime(@path).httpdate
+    def serving(env, path)
+      @path = path
+      last_modified = F.mtime(path).httpdate
       return [304, {}, []] if env['HTTP_IF_MODIFIED_SINCE'] == last_modified
       response = [
         200,
         {
           "Last-Modified"  => last_modified,
-          "Content-Type"   => Mime.mime_type(F.extname(@path), 'text/plain')
+          "Content-Type"   => Mime.mime_type(F.extname(path), 'text/plain')
         },
         env["REQUEST_METHOD"] == "HEAD" ? [] : self
       ]
@@ -81,7 +82,7 @@ module Rack
       #   We check via File::size? whether this file provides size info
       #   via stat (e.g. /proc files often don't), otherwise we have to
       #   figure it out by reading the whole file into memory.
-      size = F.size?(@path) || Utils.bytesize(F.read(@path))
+      size = F.size?(path) || Utils.bytesize(F.read(path))
 
       ranges = Rack::Utils.byte_ranges(env, size)
       if ranges.nil? || ranges.length > 1
